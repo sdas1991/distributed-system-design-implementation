@@ -46,6 +46,10 @@ class EventClient(
         const val STREAM_INGEST = "INGEST"
         const val STREAM_UPDATES = "UPDATES"
         const val STREAM_SYSTEM = "SYSTEM"
+        const val STREAM_DLQ = "DLQ"
+
+        // DLQ configuration
+        const val MAX_RETRIES = 3
     }
 
     /**
@@ -132,6 +136,15 @@ class EventClient(
                 maxAge = Duration.ofDays(30)
             )
 
+            // Create DLQ stream
+            createStreamIfNotExists(
+                jsm,
+                streamName = STREAM_DLQ,
+                subjects = listOf("dlq.>"),
+                description = "Dead Letter Queue for failed messages",
+                maxAge = Duration.ofDays(14)
+            )
+
             logger.info { "JetStream streams initialized" }
         } catch (e: Exception) {
             logger.error(e) { "Failed to initialize streams" }
@@ -193,6 +206,44 @@ class EventClient(
             true
         } catch (e: Exception) {
             logger.error(e) { "Failed to publish event to $topic" }
+            false
+        }
+    }
+
+    /**
+     * Publish a failed message to Dead Letter Queue
+     */
+    suspend fun publishToDLQ(
+        originalTopic: String,
+        payload: String,
+        error: String,
+        retryCount: Int = 0
+    ): Boolean = withContext(Dispatchers.IO) {
+        val js = jetStream ?: throw IllegalStateException("Not connected to JetStream")
+
+        try {
+            val dlqMessage = mapOf(
+                "originalTopic" to originalTopic,
+                "payload" to payload,
+                "error" to error,
+                "retryCount" to retryCount,
+                "failedAt" to System.currentTimeMillis(),
+                "lastRetryAt" to System.currentTimeMillis()
+            )
+
+            val messageJson = json.encodeToString(dlqMessage)
+            val message = Message.builder()
+                .subject("dlq.$originalTopic")
+                .data(messageJson.toByteArray())
+                .build()
+
+            js.publish(message)
+
+            logger.warn { "Published to DLQ: $originalTopic (retry: $retryCount, error: $error)" }
+
+            true
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to publish to DLQ for $originalTopic" }
             false
         }
     }

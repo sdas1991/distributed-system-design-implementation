@@ -21,6 +21,12 @@ dependencies {
     implementation("io.github.resilience4j:resilience4j-ratelimiter:2.1.0")
     implementation("io.github.resilience4j:resilience4j-kotlin:2.1.0")
 
+    // OpenTelemetry
+    implementation("io.opentelemetry:opentelemetry-api:1.32.0")
+    implementation("io.opentelemetry:opentelemetry-sdk:1.32.0")
+    implementation("io.opentelemetry:opentelemetry-exporter-otlp:1.32.0")
+    implementation("io.opentelemetry.semconv:opentelemetry-semconv:1.21.0-alpha")
+
     testImplementation(kotlin("test"))
 }
 

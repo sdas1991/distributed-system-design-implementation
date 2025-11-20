@@ -2,6 +2,7 @@ package com.shardstream.query
 
 import com.shardstream.cache.CacheManager
 import com.shardstream.observability.ResilienceManager
+import com.shardstream.observability.TracingManager
 import com.shardstream.router.ConnectionPoolManager
 import com.shardstream.router.ShardRouter
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -36,6 +37,19 @@ fun main() {
         }
     } catch (e: Exception) {
         logger.warn(e) { "Redis not available, running without cache" }
+        null
+    }
+
+    // Initialize tracing
+    val tracingManager = try {
+        TracingManager(
+            serviceName = "query-service",
+            jaegerEndpoint = System.getenv("JAEGER_ENDPOINT") ?: "http://jaeger:4317"
+        ).also {
+            logger.info { "OpenTelemetry tracing enabled" }
+        }
+    } catch (e: Exception) {
+        logger.warn(e) { "Tracing not available, running without tracing" }
         null
     }
 

@@ -12,11 +12,19 @@ Features:
 import asyncio
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 from typing import Dict, Set
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
+
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from app.nats_client import NATSClient
 from app.connection_manager import ConnectionManager
@@ -28,6 +36,28 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Initialize OpenTelemetry tracing
+def setup_tracing():
+    """Setup OpenTelemetry distributed tracing"""
+    try:
+        jaeger_endpoint = os.getenv("JAEGER_ENDPOINT", "http://jaeger:4317")
+
+        resource = Resource.create({"service.name": "realtime-service"})
+        provider = TracerProvider(resource=resource)
+
+        otlp_exporter = OTLPSpanExporter(endpoint=jaeger_endpoint, insecure=True)
+        provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+
+        trace.set_tracer_provider(provider)
+        logger.info(f"OpenTelemetry tracing enabled, exporting to {jaeger_endpoint}")
+
+        return trace.get_tracer(__name__)
+    except Exception as e:
+        logger.warning(f"Failed to setup tracing: {e}")
+        return None
+
+tracer = setup_tracing()
 
 # Global instances
 nats_client: NATSClient = None
@@ -64,6 +94,10 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Instrument FastAPI for automatic tracing
+if tracer:
+    FastAPIInstrumentor.instrument_app(app)
 
 
 @app.get("/health")

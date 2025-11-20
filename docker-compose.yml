@@ -289,6 +289,8 @@ services:
       - "8081:8081"
     environment:
       NATS_URL: nats://nats:4222
+      REDIS_URL: redis://redis:6379
+      JAEGER_ENDPOINT: http://jaeger:4317
       SHARD_0_WRITE_HOST: shard-0-write
       SHARD_1_WRITE_HOST: shard-1-write
       SHARD_2_WRITE_HOST: shard-2-write
@@ -303,6 +305,8 @@ services:
       SHARD_3_READ2_HOST: shard-3-read2
     depends_on:
       - nats
+      - redis
+      - jaeger
       - shard-0-write
       - shard-1-write
       - shard-2-write
@@ -320,6 +324,8 @@ services:
     ports:
       - "8082:8082"
     environment:
+      REDIS_URL: redis://redis:6379
+      JAEGER_ENDPOINT: http://jaeger:4317
       SHARD_0_WRITE_HOST: shard-0-write
       SHARD_1_WRITE_HOST: shard-1-write
       SHARD_2_WRITE_HOST: shard-2-write
@@ -333,6 +339,8 @@ services:
       SHARD_3_READ1_HOST: shard-3-read1
       SHARD_3_READ2_HOST: shard-3-read2
     depends_on:
+      - redis
+      - jaeger
       - shard-0-write
       - shard-1-write
       - shard-2-write
@@ -351,8 +359,10 @@ services:
       - "8083:8083"
     environment:
       NATS_URL: nats://nats:4222
+      JAEGER_ENDPOINT: http://jaeger:4317
     depends_on:
       - nats
+      - jaeger
     networks:
       - shardstream-network
     restart: unless-stopped
@@ -365,16 +375,42 @@ services:
     container_name: batch-service
     environment:
       NATS_URL: nats://nats:4222
+      REDIS_URL: redis://redis:6379
+      JAEGER_ENDPOINT: http://jaeger:4317
       SHARD_0_WRITE_HOST: shard-0-write
       SHARD_1_WRITE_HOST: shard-1-write
       SHARD_2_WRITE_HOST: shard-2-write
       SHARD_3_WRITE_HOST: shard-3-write
     depends_on:
       - nats
+      - redis
+      - jaeger
       - shard-0-write
       - shard-1-write
       - shard-2-write
       - shard-3-write
+    networks:
+      - shardstream-network
+    restart: unless-stopped
+
+  # Dead Letter Queue Processor
+  dlq-processor:
+    build:
+      context: ./dlq-processor-service
+      dockerfile: Dockerfile
+    container_name: dlq-processor
+    environment:
+      NATS_URL: nats://nats:4222
+      DLQ_DB_HOST: shard-0-write
+      DLQ_DB_PORT: "5432"
+      DLQ_DB_NAME: shardstream_shard_0
+      DLQ_DB_USER: postgres
+      DLQ_DB_PASSWORD: postgres
+      LOG_LEVEL: INFO
+      MAX_RETRIES: "3"
+    depends_on:
+      - nats
+      - shard-0-write
     networks:
       - shardstream-network
     restart: unless-stopped
@@ -389,6 +425,7 @@ services:
       - "8080:8080"
     environment:
       GATEWAY_PORT: "8080"
+      JAEGER_ENDPOINT: jaeger:4317
       INGEST_SERVICE_URL: http://ingest-service:8081
       QUERY_SERVICE_URL: http://query-service:8082
       REALTIME_SERVICE_URL: http://realtime-service:8083
@@ -396,6 +433,7 @@ services:
       RATE_LIMIT_PER_MINUTE: "1000"
       LOAD_BALANCING_STRATEGY: round-robin
     depends_on:
+      - jaeger
       - ingest-service
       - query-service
       - realtime-service

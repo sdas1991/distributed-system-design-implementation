@@ -30,6 +30,16 @@ fun main() {
     val eventClient = EventClient(clientName = "ingest-service")
     val resilienceManager = ResilienceManager()
 
+    // Initialize distributed tracing
+    val tracingManager = try {
+        TracingManager(serviceName = "ingest-service").also {
+            logger.info { "OpenTelemetry tracing enabled" }
+        }
+    } catch (e: Exception) {
+        logger.warn(e) { "Tracing not available, running without tracing" }
+        null
+    }
+
     // Connect to event bus
     runBlocking {
         eventClient.connect()

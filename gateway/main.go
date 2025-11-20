@@ -13,11 +13,49 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"go.uber.org/zap"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gofiber/fiber/otelfiber"
 )
 
 var (
 	zapLogger *zap.Logger
 )
+
+func setupTracing(ctx context.Context) (*sdktrace.TracerProvider, error) {
+	jaegerEndpoint := os.Getenv("JAEGER_ENDPOINT")
+	if jaegerEndpoint == "" {
+		jaegerEndpoint = "jaeger:4317"
+	}
+
+	exporter, err := otlptracegrpc.New(
+		ctx,
+		otlptracegrpc.WithEndpoint(jaegerEndpoint),
+		otlptracegrpc.WithInsecure(),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := resource.New(ctx,
+		resource.WithAttributes(semconv.ServiceName("gateway-service")),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(res),
+	)
+
+	otel.SetTracerProvider(tp)
+	return tp, nil
+}
 
 func main() {
 	// Initialize logger
@@ -29,6 +67,20 @@ func main() {
 	defer zapLogger.Sync()
 
 	zapLogger.Info("Starting ShardStream API Gateway...")
+
+	// Setup OpenTelemetry tracing
+	ctx := context.Background()
+	tp, err := setupTracing(ctx)
+	if err != nil {
+		zapLogger.Warn("Failed to setup tracing", zap.Error(err))
+	} else {
+		zapLogger.Info("OpenTelemetry tracing enabled")
+		defer func() {
+			if err := tp.Shutdown(ctx); err != nil {
+				zapLogger.Error("Error shutting down tracer provider", zap.Error(err))
+			}
+		}()
+	}
 
 	// Initialize configuration
 	config := LoadConfig()
@@ -45,6 +97,7 @@ func main() {
 
 	// Middleware
 	app.Use(recover.New())
+	app.Use(otelfiber.Middleware())
 	app.Use(logger.New(logger.Config{
 		Format: "${time} ${status} - ${method} ${path} ${latency}\n",
 	}))
