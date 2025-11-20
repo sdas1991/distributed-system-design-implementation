@@ -1,5 +1,6 @@
 package com.shardstream.query
 
+import com.shardstream.cache.CacheManager
 import com.shardstream.observability.ResilienceManager
 import com.shardstream.router.ConnectionPoolManager
 import com.shardstream.router.ShardRouter
@@ -25,9 +26,22 @@ fun main() {
     val connectionPool = ConnectionPoolManager(shardRouter)
     val resilienceManager = ResilienceManager()
 
+    // Initialize distributed cache
+    val cacheManager = try {
+        CacheManager(
+            redisUrl = System.getenv("REDIS_URL") ?: "redis://redis:6379",
+            defaultTtlSeconds = 300 // 5 minutes
+        ).also {
+            logger.info { "Redis cache enabled" }
+        }
+    } catch (e: Exception) {
+        logger.warn(e) { "Redis not available, running without cache" }
+        null
+    }
+
     // Start server
     embeddedServer(Netty, port = 8082, host = "0.0.0.0") {
-        configureRouting(shardRouter, connectionPool, resilienceManager)
+        configureRouting(shardRouter, connectionPool, resilienceManager, cacheManager)
         configureSerialization()
         configureMonitoring()
         configureStatusPages()
@@ -37,6 +51,7 @@ fun main() {
     Runtime.getRuntime().addShutdownHook(Thread {
         logger.info { "Shutting down Query Service..." }
         connectionPool.close()
+        cacheManager?.close()
     })
 }
 
@@ -68,14 +83,15 @@ fun Application.configureStatusPages() {
 fun Application.configureRouting(
     shardRouter: ShardRouter,
     connectionPool: ConnectionPoolManager,
-    resilienceManager: ResilienceManager
+    resilienceManager: ResilienceManager,
+    cacheManager: CacheManager?
 ) {
-    val queryHandler = QueryHandler(shardRouter, connectionPool, resilienceManager)
+    val queryHandler = QueryHandler(shardRouter, connectionPool, resilienceManager, cacheManager)
 
     routing {
         route("/api/v1") {
             query(queryHandler)
-            health(connectionPool, resilienceManager)
+            health(connectionPool, resilienceManager, cacheManager)
         }
     }
 }

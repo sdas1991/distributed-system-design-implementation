@@ -111,7 +111,8 @@ fun Route.query(handler: QueryHandler) {
 
 fun Route.health(
     connectionPool: ConnectionPoolManager,
-    resilienceManager: ResilienceManager
+    resilienceManager: ResilienceManager,
+    cacheManager: CacheManager?
 ) {
     route("/health") {
         get {
@@ -129,6 +130,10 @@ fun Route.health(
                     "healthy" to resilienceHealth.healthy,
                     "openCircuits" to resilienceHealth.openCircuits
                 ),
+                "cache" to mapOf(
+                    "enabled" to (cacheManager != null),
+                    "stats" to (cacheManager?.getStats() ?: mapOf("message" to "cache disabled"))
+                ),
                 "timestamp" to System.currentTimeMillis()
             ))
         }
@@ -137,11 +142,13 @@ fun Route.health(
             val poolStats = connectionPool.getPoolStats()
             val cbMetrics = resilienceManager.getHealthStatus().circuitBreakerMetrics
             val retryMetrics = resilienceManager.getHealthStatus().retryMetrics
+            val cacheStats = cacheManager?.getStats()
 
             call.respond(HttpStatusCode.OK, mapOf(
                 "connectionPools" to poolStats,
                 "circuitBreakers" to cbMetrics,
-                "retries" to retryMetrics
+                "retries" to retryMetrics,
+                "cache" to (cacheStats ?: mapOf("enabled" to false))
             ))
         }
     }

@@ -35,6 +35,7 @@ dependencies {
     // Common libraries (local)
     implementation(project(":common-libs:shard-router"))
     implementation(project(":common-libs:observability"))
+    implementation(project(":common-libs:cache"))
 
     testImplementation(kotlin("test"))
 }

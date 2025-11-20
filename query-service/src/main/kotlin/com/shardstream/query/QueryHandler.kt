@@ -1,5 +1,7 @@
 package com.shardstream.query
 
+import com.shardstream.cache.CacheKeys
+import com.shardstream.cache.CacheManager
 import com.shardstream.observability.ResilienceManager
 import com.shardstream.router.ConnectionPoolManager
 import com.shardstream.router.ShardRouter
@@ -8,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
 import java.sql.ResultSet
 import java.sql.Timestamp
 import java.util.*
@@ -22,14 +25,17 @@ private val logger = KotlinLogging.logger {}
  * - Scatter-gather queries across shards
  * - Aggregation
  * - Pagination
+ * - Distributed cache (cache-aside pattern)
  */
 class QueryHandler(
     private val shardRouter: ShardRouter,
     private val connectionPool: ConnectionPoolManager,
-    private val resilienceManager: ResilienceManager
+    private val resilienceManager: ResilienceManager,
+    private val cacheManager: CacheManager? = null
 ) {
     /**
      * Get events for a specific customer (single shard query)
+     * Uses cache-aside pattern
      */
     suspend fun getEventsByCustomer(
         customerId: String,
@@ -37,11 +43,18 @@ class QueryHandler(
         offset: Int,
         eventType: String? = null
     ): List<EventResponse> = withContext(Dispatchers.IO) {
+        // Check cache first
+        val cacheKey = CacheKeys.customerEvents(customerId, limit, offset, eventType)
+        cacheManager?.getObject<CachedEventList>(cacheKey)?.let { cached ->
+            logger.debug { "Cache HIT for customer $customerId events" }
+            return@withContext cached.events
+        }
+
+        // Cache miss - query database
         val shardId = shardRouter.getShardId(customerId)
+        logger.info { "Cache MISS - Querying events for customer $customerId from shard $shardId" }
 
-        logger.info { "Querying events for customer $customerId from shard $shardId" }
-
-        resilienceManager.executeResilient("query-shard-$shardId") {
+        val events = resilienceManager.executeResilient("query-shard-$shardId") {
             connectionPool.getReadDataSource(shardId).connection.use { conn ->
                 val sql = buildString {
                     append("SELECT id, customer_id, event_type, payload, metadata, created_at ")
@@ -72,6 +85,11 @@ class QueryHandler(
                 }
             }
         }
+
+        // Cache the results (TTL: 5 minutes)
+        cacheManager?.setObject(cacheKey, CachedEventList(events), ttlSeconds = 300)
+
+        events
     }
 
     /**
@@ -262,3 +280,11 @@ class QueryHandler(
         )
     }
 }
+
+/**
+ * Cached wrapper for event lists
+ */
+@Serializable
+data class CachedEventList(
+    val events: List<EventResponse>
+)

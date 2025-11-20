@@ -1,5 +1,7 @@
 package com.shardstream.ingest
 
+import com.shardstream.cache.CacheKeys
+import com.shardstream.cache.CacheManager
 import com.shardstream.events.EventClient
 import com.shardstream.events.IngestEvent
 import com.shardstream.events.UpdateEvent
@@ -27,12 +29,14 @@ private val logger = KotlinLogging.logger {}
  * - Publish to event bus
  * - Batch processing
  * - Resilience patterns
+ * - Cache invalidation on write
  */
 class IngestHandler(
     private val shardRouter: ShardRouter,
     private val connectionPool: ConnectionPoolManager,
     private val eventClient: EventClient,
-    private val resilienceManager: ResilienceManager
+    private val resilienceManager: ResilienceManager,
+    private val cacheManager: CacheManager? = null
 ) {
     private val json = Json { prettyPrint = false }
 
@@ -54,6 +58,9 @@ class IngestHandler(
 
                 // 2. Publish to event bus (async, fire-and-forget for real-time)
                 publishToEventBus(eventId, request, timestamp)
+
+                // 3. Invalidate cache for this customer
+                invalidateCustomerCache(request.customerId)
             }
 
             IngestResponse(
@@ -212,5 +219,25 @@ class IngestHandler(
         eventClient.publish(EventClient.TOPIC_UPDATES_DELAYED, delayedEvent)
 
         logger.debug { "Published events for $eventId to event bus" }
+    }
+
+    /**
+     * Invalidate cache entries for a customer
+     */
+    private fun invalidateCustomerCache(customerId: String) {
+        if (cacheManager == null) return
+
+        try {
+            // Invalidate all cached queries for this customer
+            val pattern = CacheKeys.customerPattern(customerId)
+            val deleted = cacheManager.deletePattern(pattern)
+
+            if (deleted > 0) {
+                logger.debug { "Invalidated $deleted cache entries for customer $customerId" }
+            }
+        } catch (e: Exception) {
+            // Cache invalidation failure should not break ingestion
+            logger.warn(e) { "Failed to invalidate cache for customer $customerId" }
+        }
     }
 }
