@@ -1,0 +1,389 @@
+version: '3.8'
+
+services:
+  # ============================================
+  # NATS JetStream (Event Bus)
+  # ============================================
+  nats:
+    image: nats:2.10-alpine
+    container_name: shardstream-nats
+    ports:
+      - "4222:4222"  # Client connections
+      - "8222:8222"  # HTTP monitoring
+    command: ["-js", "-m", "8222"]
+    networks:
+      - shardstream-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ============================================
+  # Database Shards (4 shards × 2 replicas each)
+  # ============================================
+
+  # Shard 0 - Write Node
+  shard-0-write:
+    image: postgres:16-alpine
+    container_name: shard-0-write
+    environment:
+      POSTGRES_DB: shardstream_shard_0
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - shard-0-write-data:/var/lib/postgresql/data
+      - ./db-shards/init-scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - shardstream-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Shard 0 - Read Replica 1
+  shard-0-read1:
+    image: postgres:16-alpine
+    container_name: shard-0-read1
+    environment:
+      POSTGRES_DB: shardstream_shard_0
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - shard-0-read1-data:/var/lib/postgresql/data
+      - ./db-shards/init-scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5433:5432"
+    networks:
+      - shardstream-network
+
+  # Shard 0 - Read Replica 2
+  shard-0-read2:
+    image: postgres:16-alpine
+    container_name: shard-0-read2
+    environment:
+      POSTGRES_DB: shardstream_shard_0
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - shard-0-read2-data:/var/lib/postgresql/data
+      - ./db-shards/init-scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5434:5432"
+    networks:
+      - shardstream-network
+
+  # Shard 1 - Write Node
+  shard-1-write:
+    image: postgres:16-alpine
+    container_name: shard-1-write
+    environment:
+      POSTGRES_DB: shardstream_shard_1
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - shard-1-write-data:/var/lib/postgresql/data
+      - ./db-shards/init-scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5435:5432"
+    networks:
+      - shardstream-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Shard 1 - Read Replica 1
+  shard-1-read1:
+    image: postgres:16-alpine
+    container_name: shard-1-read1
+    environment:
+      POSTGRES_DB: shardstream_shard_1
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - shard-1-read1-data:/var/lib/postgresql/data
+      - ./db-shards/init-scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5436:5432"
+    networks:
+      - shardstream-network
+
+  # Shard 1 - Read Replica 2
+  shard-1-read2:
+    image: postgres:16-alpine
+    container_name: shard-1-read2
+    environment:
+      POSTGRES_DB: shardstream_shard_1
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - shard-1-read2-data:/var/lib/postgresql/data
+      - ./db-shards/init-scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5437:5432"
+    networks:
+      - shardstream-network
+
+  # Shard 2 - Write Node
+  shard-2-write:
+    image: postgres:16-alpine
+    container_name: shard-2-write
+    environment:
+      POSTGRES_DB: shardstream_shard_2
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - shard-2-write-data:/var/lib/postgresql/data
+      - ./db-shards/init-scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5438:5432"
+    networks:
+      - shardstream-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Shard 2 - Read Replica 1
+  shard-2-read1:
+    image: postgres:16-alpine
+    container_name: shard-2-read1
+    environment:
+      POSTGRES_DB: shardstream_shard_2
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - shard-2-read1-data:/var/lib/postgresql/data
+      - ./db-shards/init-scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5439:5432"
+    networks:
+      - shardstream-network
+
+  # Shard 2 - Read Replica 2
+  shard-2-read2:
+    image: postgres:16-alpine
+    container_name: shard-2-read2
+    environment:
+      POSTGRES_DB: shardstream_shard_2
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - shard-2-read2-data:/var/lib/postgresql/data
+      - ./db-shards/init-scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5440:5432"
+    networks:
+      - shardstream-network
+
+  # Shard 3 - Write Node
+  shard-3-write:
+    image: postgres:16-alpine
+    container_name: shard-3-write
+    environment:
+      POSTGRES_DB: shardstream_shard_3
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - shard-3-write-data:/var/lib/postgresql/data
+      - ./db-shards/init-scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5441:5432"
+    networks:
+      - shardstream-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Shard 3 - Read Replica 1
+  shard-3-read1:
+    image: postgres:16-alpine
+    container_name: shard-3-read1
+    environment:
+      POSTGRES_DB: shardstream_shard_3
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - shard-3-read1-data:/var/lib/postgresql/data
+      - ./db-shards/init-scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5442:5432"
+    networks:
+      - shardstream-network
+
+  # Shard 3 - Read Replica 2
+  shard-3-read2:
+    image: postgres:16-alpine
+    container_name: shard-3-read2
+    environment:
+      POSTGRES_DB: shardstream_shard_3
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - shard-3-read2-data:/var/lib/postgresql/data
+      - ./db-shards/init-scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5443:5432"
+    networks:
+      - shardstream-network
+
+  # ============================================
+  # Microservices
+  # ============================================
+
+  # Ingest Service
+  ingest-service:
+    build:
+      context: .
+      dockerfile: ingest-service/Dockerfile
+    container_name: ingest-service
+    ports:
+      - "8081:8081"
+    environment:
+      NATS_URL: nats://nats:4222
+      SHARD_0_WRITE_HOST: shard-0-write
+      SHARD_1_WRITE_HOST: shard-1-write
+      SHARD_2_WRITE_HOST: shard-2-write
+      SHARD_3_WRITE_HOST: shard-3-write
+      SHARD_0_READ1_HOST: shard-0-read1
+      SHARD_0_READ2_HOST: shard-0-read2
+      SHARD_1_READ1_HOST: shard-1-read1
+      SHARD_1_READ2_HOST: shard-1-read2
+      SHARD_2_READ1_HOST: shard-2-read1
+      SHARD_2_READ2_HOST: shard-2-read2
+      SHARD_3_READ1_HOST: shard-3-read1
+      SHARD_3_READ2_HOST: shard-3-read2
+    depends_on:
+      - nats
+      - shard-0-write
+      - shard-1-write
+      - shard-2-write
+      - shard-3-write
+    networks:
+      - shardstream-network
+    restart: unless-stopped
+
+  # Query Service
+  query-service:
+    build:
+      context: .
+      dockerfile: query-service/Dockerfile
+    container_name: query-service
+    ports:
+      - "8082:8082"
+    environment:
+      SHARD_0_WRITE_HOST: shard-0-write
+      SHARD_1_WRITE_HOST: shard-1-write
+      SHARD_2_WRITE_HOST: shard-2-write
+      SHARD_3_WRITE_HOST: shard-3-write
+      SHARD_0_READ1_HOST: shard-0-read1
+      SHARD_0_READ2_HOST: shard-0-read2
+      SHARD_1_READ1_HOST: shard-1-read1
+      SHARD_1_READ2_HOST: shard-1-read2
+      SHARD_2_READ1_HOST: shard-2-read1
+      SHARD_2_READ2_HOST: shard-2-read2
+      SHARD_3_READ1_HOST: shard-3-read1
+      SHARD_3_READ2_HOST: shard-3-read2
+    depends_on:
+      - shard-0-write
+      - shard-1-write
+      - shard-2-write
+      - shard-3-write
+    networks:
+      - shardstream-network
+    restart: unless-stopped
+
+  # Realtime Update Service
+  realtime-service:
+    build:
+      context: ./realtime-service
+      dockerfile: Dockerfile
+    container_name: realtime-service
+    ports:
+      - "8083:8083"
+    environment:
+      NATS_URL: nats://nats:4222
+    depends_on:
+      - nats
+    networks:
+      - shardstream-network
+    restart: unless-stopped
+
+  # Batch Processing Service
+  batch-service:
+    build:
+      context: ./batch-service
+      dockerfile: Dockerfile
+    container_name: batch-service
+    environment:
+      NATS_URL: nats://nats:4222
+      SHARD_0_WRITE_HOST: shard-0-write
+      SHARD_1_WRITE_HOST: shard-1-write
+      SHARD_2_WRITE_HOST: shard-2-write
+      SHARD_3_WRITE_HOST: shard-3-write
+    depends_on:
+      - nats
+      - shard-0-write
+      - shard-1-write
+      - shard-2-write
+      - shard-3-write
+    networks:
+      - shardstream-network
+    restart: unless-stopped
+
+  # API Gateway
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: gateway
+    ports:
+      - "8080:8080"
+    environment:
+      GATEWAY_PORT: "8080"
+      INGEST_SERVICE_URL: http://ingest-service:8081
+      QUERY_SERVICE_URL: http://query-service:8082
+      REALTIME_SERVICE_URL: http://realtime-service:8083
+      RATE_LIMIT_ENABLED: "true"
+      RATE_LIMIT_PER_MINUTE: "1000"
+      LOAD_BALANCING_STRATEGY: round-robin
+    depends_on:
+      - ingest-service
+      - query-service
+      - realtime-service
+    networks:
+      - shardstream-network
+    restart: unless-stopped
+
+# ============================================
+# Volumes
+# ============================================
+volumes:
+  shard-0-write-data:
+  shard-0-read1-data:
+  shard-0-read2-data:
+  shard-1-write-data:
+  shard-1-read1-data:
+  shard-1-read2-data:
+  shard-2-write-data:
+  shard-2-read1-data:
+  shard-2-read2-data:
+  shard-3-write-data:
+  shard-3-read1-data:
+  shard-3-read2-data:
+
+# ============================================
+# Networks
+# ============================================
+networks:
+  shardstream-network:
+    driver: bridge
